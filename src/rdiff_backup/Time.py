@@ -21,6 +21,7 @@
 import calendar
 import re
 import time
+from rdiff_backup import wireformat
 from rdiffbackup.singletons import generics
 
 _interval_conv_dict = {
@@ -50,6 +51,7 @@ TIMEDATE_FORMAT_LENGTH = 19  # 19 chars with 4 digits year
 TIMEDATE_FORMAT_REGEXP = re.compile("[T:-]")
 
 
+@wireformat.register_exception
 class TimeException(Exception):
     pass
 

@@ -31,11 +31,13 @@ handle that error.)
 import os
 import re
 
+from rdiff_backup import wireformat
 from rdiffbackup.locations import increment
 from rdiffbackup.singletons import consts, generics, log, specifics
 from rdiffbackup.utils import convert
 
 
+@wireformat.register_exception
 class QuotingException(Exception):
     pass
 

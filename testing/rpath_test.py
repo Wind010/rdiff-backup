@@ -35,7 +35,9 @@ class RORPStateTest(RPathTest):
         rorp = rpath.RPath(self.lc, self.prefix, ("regular_file",)).getRORPath()
         rorp.file = sys.stdin  # try to confuse pickler
         self.assertTrue(rorp.isreg())
-        rorp2 = pickle.loads(pickle.dumps(rorp, 1))
+        # test-only: exercises RORPath's own (de)serialization protocol
+        # in-process, not the client/server connection (see wireformat.py)
+        rorp2 = pickle.loads(pickle.dumps(rorp, 1))  # nosec B301
         self.assertTrue(rorp2.isreg())
         self.assertEqual(rorp2.data, rorp.data)
         self.assertEqual(rorp2.index, rorp.index)

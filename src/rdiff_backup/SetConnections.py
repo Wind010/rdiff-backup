@@ -28,7 +28,7 @@ import os
 import re
 import subprocess
 import sys
-from rdiff_backup import connection, rpath
+from rdiff_backup import connection, rpath, wireformat
 from rdiffbackup.singletons import consts, generics, log, specifics
 from rdiffbackup.utils import convert
 
@@ -37,6 +37,7 @@ from rdiffbackup.utils import convert
 __conn_remote_cmds = [None]
 
 
+@wireformat.register_exception
 class SetConnectionsException(Exception):
     pass
 

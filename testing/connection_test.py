@@ -182,8 +182,10 @@ class PipeConnectionTest(unittest.TestCase):
         qrp = map_filenames.QuotedRPath(self.conn, regfilename)
         self.assertEqual(self.conn.reval("getattr", qrp, "data"), qrp.data)
         self.assertTrue(qrp.isreg())
-        qrp_class_str = str(self.conn.reval("rpath.RPath.__class__", qrp))
-        self.assertGreater(qrp_class_str.find("QuotedRPath"), -1)
+        # Bare classes can no longer cross the connection (wireformat.py only
+        # (de)serializes a closed set of registered types, by design, to
+        # close CWE-502); check the class name locally instead.
+        self.assertIn("QuotedRPath", type(qrp).__name__)
 
     def testExceptions(self):
         """Test exceptional results"""

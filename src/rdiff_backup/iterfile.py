@@ -19,12 +19,12 @@
 """Convert an iterator to a file object and vice-versa"""
 
 import errno
-import pickle
 import array
-from rdiff_backup import robust, rpath
+from rdiff_backup import robust, rpath, wireformat
 from rdiffbackup.singletons import consts
 
 
+@wireformat.register_exception
 class IterFileException(Exception):
     pass
 
@@ -63,7 +63,7 @@ class UnwrapFile:
         data_type, data_len = header[0:1], self._b2i(header[1:])
         buf = self.file.read(data_len)
         if data_type in b"oeh":
-            return data_type, pickle.loads(buf)
+            return data_type, wireformat.unpackb(buf)
         elif data_type in b"fc":
             return data_type, buf
         else:
@@ -248,10 +248,10 @@ class FileWrappingIter:
                 self.currently_in_file = currentobj
                 self._add_from_file(b"f")
             else:
-                pickled_data = pickle.dumps(currentobj, consts.PICKLE_PROTOCOL)
+                packed_data = wireformat.packb(currentobj)
                 self.array_buf.frombytes(b"o")
-                self.array_buf.frombytes(self._i2b(len(pickled_data), 7))
-                self.array_buf.frombytes(pickled_data)
+                self.array_buf.frombytes(self._i2b(len(packed_data), 7))
+                self.array_buf.frombytes(packed_data)
         return 1
 
     def _add_from_file(self, prefix_letter):
@@ -267,14 +267,12 @@ class FileWrappingIter:
         )
         if buf is None:  # error occurred above, encode exception
             self.currently_in_file = None
-            excstr = pickle.dumps(self.last_exception, consts.PICKLE_PROTOCOL)
+            excstr = wireformat.packb(self.last_exception)
             total = b"".join((b"e", self._i2b(len(excstr), 7), excstr))
         else:
             total = b"".join((prefix_letter, self._i2b(len(buf), 7), buf))
             if buf == b"":  # end of file
-                cstr = pickle.dumps(
-                    self.currently_in_file.close(), consts.PICKLE_PROTOCOL
-                )
+                cstr = wireformat.packb(self.currently_in_file.close())
                 self.currently_in_file = None
                 total += b"".join((b"h", self._i2b(len(cstr), 7), cstr))
         self.array_buf.frombytes(total)
@@ -297,12 +295,14 @@ class FileWrappingIter:
         return i.to_bytes(size, byteorder="big")
 
 
+@wireformat.register_marker
 class MiscIterFlush:
     """Used to signal that a MiscIterToFile should flush buffer"""
 
     pass
 
 
+@wireformat.register_marker
 class MiscIterFlushRepeat(MiscIterFlush):
     """Flush, but then cause Misc Iter to yield this same object
 
@@ -405,27 +405,23 @@ class MiscIterToFile(FileWrappingIter):
         return 1
 
     def _add_misc_object(self, obj):
-        """Add an arbitrary pickleable object to the buffer"""
-        pickled_data = pickle.dumps(obj, consts.PICKLE_PROTOCOL)
+        """Add an arbitrary serializable object to the buffer"""
+        packed_data = wireformat.packb(obj)
         self.array_buf.frombytes(b"o")
-        self.array_buf.frombytes(self._i2b(len(pickled_data), 7))
-        self.array_buf.frombytes(pickled_data)
+        self.array_buf.frombytes(self._i2b(len(packed_data), 7))
+        self.array_buf.frombytes(packed_data)
 
     def _add_rorp(self, rorp):
         """Add a rorp to the buffer"""
         if rorp.file:
-            pickled_data = pickle.dumps(
-                (rorp.index, rorp.data, 1), consts.PICKLE_PROTOCOL
-            )
+            packed_data = wireformat.packb((rorp.index, rorp.data, 1))
             self.next_in_line = rorp.file
         else:
-            pickled_data = pickle.dumps(
-                (rorp.index, rorp.data, 0), consts.PICKLE_PROTOCOL
-            )
+            packed_data = wireformat.packb((rorp.index, rorp.data, 0))
             self.rorps_in_buffer += 1
         self.array_buf.frombytes(b"r")
-        self.array_buf.frombytes(self._i2b(len(pickled_data), 7))
-        self.array_buf.frombytes(pickled_data)
+        self.array_buf.frombytes(self._i2b(len(packed_data), 7))
+        self.array_buf.frombytes(packed_data)
 
     def _add_final(self):
         """Signal the end of the iterator to the other end"""
@@ -459,9 +455,9 @@ class FileToMiscIter(IterWrappingFile):
         else:
             raise IterFileException("Bad file type %s" % (type,))
 
-    def _get_rorp(self, pickled_tuple):
+    def _get_rorp(self, rorp_tuple):
         """Return rorp that data represents"""
-        index, data_dict, num_files = pickled_tuple
+        index, data_dict, num_files = rorp_tuple
         rorp = rpath.RORPath(index, data_dict)
         if num_files:
             assert num_files == 1, "Only one file accepted right now"
@@ -503,7 +499,7 @@ class FileToMiscIter(IterWrappingFile):
         data = self.buf[8 : 8 + length]
         self.buf = self.buf[8 + length :]
         if type in b"oerh":
-            return type, pickle.loads(data)
+            return type, wireformat.unpackb(data)
         else:
             return type, data
 

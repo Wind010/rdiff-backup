@@ -22,10 +22,11 @@ Base module for any metadata class to derive from.
 
 import re
 
-from rdiff_backup import C
+from rdiff_backup import C, wireformat
 from rdiffbackup.singletons import log
 
 
+@wireformat.register_exception
 class ParsingError(Exception):
     """This is raised when bad or unparsable data is received"""
 

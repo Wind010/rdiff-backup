@@ -21,7 +21,7 @@
 import errno
 import signal
 import zlib
-from rdiff_backup import C, connection, librsync, rpath
+from rdiff_backup import C, connection, librsync, rpath, wireformat
 from rdiffbackup.singletons import log, sstats
 
 # Those are the signals we want to catch because they relate to conditions
@@ -53,6 +53,7 @@ if hasattr(errno, "EDEADLOCK"):
     _robust_errno_list.append(errno.EDEADLOCK)
 
 
+@wireformat.register_exception
 class SignalException(Exception):
     """SignalException(signum) means signal signum has been received"""
 

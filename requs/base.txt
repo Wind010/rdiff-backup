@@ -3,3 +3,4 @@
 
 pywin32 ; platform_system=="Windows"
 PyYAML  # for rdiff-backup >= 2.1
+msgpack  # for rdiff-backup >= 2.6, replaces pickle on the connection (CWE-502)

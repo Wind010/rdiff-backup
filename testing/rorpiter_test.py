@@ -227,11 +227,14 @@ class TreeReducerTest(unittest.TestCase):
 
     def testTreeReducerState(self):
         """Test saving and recreation of an IterTreeReducer"""
+        # Test-only: exercises IterTreeReducer's own (de)serialization
+        # protocol in-process, not the client/server connection (see
+        # wireformat.py).  Not something exploitable.
         itm1a = rorpiter.IterTreeReducer(ITRBadder, [])
         for index in self.i1a:
             val = itm1a(index)
             self.assertTrue(val)
-        itm1b = pickle.loads(pickle.dumps(itm1a))
+        itm1b = pickle.loads(pickle.dumps(itm1a))  # nosec B301
         for index in self.i1b:
             val = itm1b(index)
             self.assertTrue(val)
@@ -245,14 +248,14 @@ class TreeReducerTest(unittest.TestCase):
                 self.assertFalse(val)
             else:
                 self.assertTrue(val)
-        itm2b = pickle.loads(pickle.dumps(itm2a))
+        itm2b = pickle.loads(pickle.dumps(itm2a))  # nosec B301
         for index in self.i2b:
             val = itm2b(index)
             if index == ():
                 self.assertFalse(val)
             else:
                 self.assertTrue(val)
-        itm2c = pickle.loads(pickle.dumps(itm2b))
+        itm2c = pickle.loads(pickle.dumps(itm2b))  # nosec B301
         for index in self.i2c:
             val = itm2c(index)
             if index == ():

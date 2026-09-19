@@ -20,7 +20,6 @@
 
 import errno
 import importlib
-import pickle
 import subprocess
 import sys
 import time
@@ -31,6 +30,7 @@ from rdiff_backup import (
     iterfile,
     robust,
     rpath,
+    wireformat,
     Security,
 )
 from rdiffbackup.locations import increment
@@ -38,18 +38,22 @@ from rdiffbackup.locations.map import filenames as map_filenames
 from rdiffbackup.singletons import consts, log, specifics
 
 
+@wireformat.register_exception
 class ConnectionError(Exception):
     pass
 
 
+@wireformat.register_exception
 class ConnectionReadError(ConnectionError):
     pass
 
 
+@wireformat.register_exception
 class ConnectionWriteError(ConnectionError):
     pass
 
 
+@wireformat.register_exception
 class ConnectionQuit(Exception):
     pass
 
@@ -195,6 +199,48 @@ class ConnectionRequest:
         )
 
 
+wireformat.set_request_class(ConnectionRequest)
+
+
+def _encode_rpath_extra(obj):
+    """Recognize rpath.RPath/RORPath and friends nested inside a container
+
+    wireformat can't import rpath (circular import), so it can't special-case
+    these the way connection.py's own top-level _put() dispatch does. Without
+    this, an RPath buried inside a tuple/list/dict -- e.g. a return value from
+    a remote call -- would reach msgpack unencoded and fail with "can not
+    serialize 'RPath' object".
+    """
+    if isinstance(obj, map_filenames.QuotedRPath):
+        return ("Q", obj.conn.conn_number, obj.base, obj.index, obj.data)
+    elif isinstance(obj, increment.StoredRPath):
+        return ("S", obj.conn.conn_number, obj.base, obj.index, obj.data)
+    elif isinstance(obj, rpath.RPath):
+        return ("R", obj.conn.conn_number, obj.base, obj.index, obj.data)
+    elif isinstance(obj, rpath.RORPath):
+        return ("O", obj.index, obj.data)
+    return None
+
+
+def _decode_rpath_extra(payload):
+    """Reverse of _encode_rpath_extra"""
+    tag = payload[0]
+    if tag == "O":
+        _, index, data = payload
+        return rpath.RORPath(index, data)
+    _, conn_number, base, index, data = payload
+    conn = specifics.connection_dict[conn_number]
+    if tag == "Q":
+        return map_filenames.QuotedRPath(conn, base, index, data)
+    elif tag == "S":
+        return increment.StoredRPath(conn, base, index, data)
+    else:
+        return rpath.RPath(conn, base, index, data)
+
+
+wireformat.set_extra_hooks(_encode_rpath_extra, _decode_rpath_extra)
+
+
 class LowLevelPipeConnection(Connection):
     """Routines for just sending objects from one side of pipe to another
 
@@ -258,7 +304,7 @@ class LowLevelPipeConnection(Connection):
 
     def _putobj(self, obj, req_num):
         """Send a generic python obj down the outpipe"""
-        self._write("o", pickle.dumps(obj, consts.PICKLE_PROTOCOL), req_num)
+        self._write("o", wireformat.packb(obj), req_num)
 
     def _putbuf(self, buf, req_num):
         """Send buffer buf down the outpipe"""
@@ -282,7 +328,7 @@ class LowLevelPipeConnection(Connection):
         and the other information is put in a tuple.
         """
         rpath_repr = (rpath.conn.conn_number, rpath.base, rpath.index, rpath.data)
-        self._write(letter, pickle.dumps(rpath_repr, consts.PICKLE_PROTOCOL), req_num)
+        self._write(letter, wireformat.packb(rpath_repr), req_num)
 
     def _putrorpath(self, rorpath, req_num):
         """Put an rorpath into the pipe
@@ -292,7 +338,7 @@ class LowLevelPipeConnection(Connection):
 
         """
         rorpath_repr = (rorpath.index, rorpath.data)
-        self._write("r", pickle.dumps(rorpath_repr, consts.PICKLE_PROTOCOL), req_num)
+        self._write("r", wireformat.packb(rorpath_repr), req_num)
 
     def _putconn(self, pipeconn, req_num):
         """Put a connection into the pipe
@@ -366,7 +412,7 @@ class LowLevelPipeConnection(Connection):
             )
 
         if format_string == b"o":
-            result = pickle.loads(data)
+            result = wireformat.unpackb(data)
         elif format_string == b"b":
             result = data
         elif format_string == b"f":
@@ -396,12 +442,12 @@ class LowLevelPipeConnection(Connection):
 
     def _getrorpath(self, raw_rorpath_buf):
         """Reconstruct RORPath object from raw data"""
-        index, data = pickle.loads(raw_rorpath_buf)
+        index, data = wireformat.unpackb(raw_rorpath_buf)
         return rpath.RORPath(index, data)
 
     def _getrpath(self, raw_rpath_buf, rpath_type):
         """Return RPath object indicated by raw_rpath_buf"""
-        conn_number, base, index, data = pickle.loads(raw_rpath_buf)
+        conn_number, base, index, data = wireformat.unpackb(raw_rpath_buf)
         return rpath_type(specifics.connection_dict[conn_number], base, index, data)
 
     def _close(self):

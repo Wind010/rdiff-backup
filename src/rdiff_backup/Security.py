@@ -20,10 +20,11 @@
 
 import os
 import tempfile
-from rdiff_backup import rpath
+from rdiff_backup import rpath, wireformat
 from rdiffbackup.singletons import specifics
 
 
+@wireformat.register_exception
 class Violation(Exception):
     """Exception that indicates an improper request has been received"""
 

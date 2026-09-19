@@ -21,7 +21,7 @@
 import time
 import typing
 
-from rdiff_backup import Time
+from rdiff_backup import Time, wireformat
 from rdiffbackup.singletons import generics, specifics
 from rdiffbackup.utils import convert
 
@@ -66,6 +66,7 @@ class SessionStatsReader(typing.Protocol):  # pragma: no cover
         ...
 
 
+@wireformat.register_exception
 class StatsException(Exception):
     pass
 

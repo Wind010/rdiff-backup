@@ -28,23 +28,26 @@ import re
 import sys
 import typing
 
-from rdiff_backup import robust, rorpiter, rpath
+from rdiff_backup import robust, rorpiter, rpath, wireformat
 from rdiffbackup.singletons import generics, log
 from rdiffbackup.utils import convert
 
 
+@wireformat.register_exception
 class SelectError(Exception):
     """Some error dealing with the Select class"""
 
     pass
 
 
+@wireformat.register_exception
 class FilePrefixError(SelectError):
     """Signals that a specified file doesn't start with correct prefix"""
 
     pass
 
 
+@wireformat.register_exception
 class GlobbingError(SelectError):
     """Something has gone wrong when parsing a glob string"""
 

@@ -13,7 +13,18 @@ The prefixes are to be understood as follows, in roughly decreasing order of imp
 
 === Changes
 
-* CHG: introduce pyproject.toml to comply with PEP517 and PEP621, 
+* CHG: the client/server connection no longer uses `pickle` to
+       (de)serialize data sent over the pipe, replaced by `msgpack` with an
+       explicit registry for the small set of exception types that can
+       cross the connection (CWE-502: a lower-privileged or unauthenticated
+       process able to write to that pipe could previously trigger
+       arbitrary code execution via a crafted `pickle` payload, before any
+       `--restrict-path`/`--restrict-mode` check ever ran). This is a
+       breaking wire-format change: client and server must be upgraded
+       together, an old (pre-2.6) side talking to a new one will fail with
+       a low-level decode error rather than a clean version message, since
+       version negotiation itself now happens over the new wire format.
+* CHG: introduce pyproject.toml to comply with PEP517 and PEP621,
        normal users shouldn't notice a difference, packagers might need to 
        adapt, closes #757
 * CHG: rdiff-backup executable under Windows is built with Python 

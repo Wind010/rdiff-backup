@@ -24,11 +24,12 @@ which is written in C.  The goal was to use C as little as possible...
 """
 
 import array
-from rdiff_backup import _librsync
+from rdiff_backup import _librsync, wireformat
 
 blocksize = _librsync.RSM_JOB_BLOCKSIZE
 
 
+@wireformat.register_exception
 class librsyncError(Exception):
     """Signifies error in internal librsync processing (bad signature, etc.)
 

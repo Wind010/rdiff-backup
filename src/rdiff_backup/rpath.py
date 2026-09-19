@@ -43,7 +43,7 @@ import stat
 import sys
 import tempfile
 import time
-from rdiff_backup import C
+from rdiff_backup import C, wireformat
 from rdiffbackup.locations.map import owners as map_owners
 from rdiffbackup.meta import acl_posix, acl_win, ea
 from rdiffbackup.singletons import consts, generics, log, specifics
@@ -57,6 +57,7 @@ except ImportError:
     pass
 
 
+@wireformat.register_exception
 class SkipFileException(Exception):
     """Signal that the current file should be skipped but then continue
 
@@ -69,6 +70,7 @@ class SkipFileException(Exception):
     pass
 
 
+@wireformat.register_exception
 class RPathException(Exception):
     pass
 

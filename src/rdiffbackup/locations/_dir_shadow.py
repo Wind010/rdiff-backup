@@ -34,6 +34,7 @@ from rdiff_backup import (
     rorpiter,
     rpath,
     selection,
+    wireformat,
 )
 from rdiffbackup.locations import location
 from rdiffbackup.locations.map import hardlinks as map_hardlinks
@@ -283,6 +284,7 @@ class ReadDirShadow(location.LocationShadow):
         log.Log("Successfully compared path {pa}".format(pa=path), log.INFO)
 
 
+@wireformat.register_object
 class _CompareReport:
     """
     When two files don't match, this tells you how they don't match

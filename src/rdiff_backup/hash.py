@@ -19,6 +19,7 @@
 """Contains a file wrapper that returns a hash on close"""
 
 import hashlib
+from rdiff_backup import wireformat
 from rdiffbackup.singletons import consts, specifics
 
 
@@ -49,6 +50,7 @@ class FileWrapper:
         return Report(self.fileobj.close(), self.sha1.hexdigest())
 
 
+@wireformat.register_object
 class Report:
     """Hold final information about a byte stream"""
 

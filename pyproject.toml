@@ -29,6 +29,7 @@ classifiers = [
 dependencies = [
 	'pywin32 ; platform_system == "Windows"',
 	'PyYAML',
+	'msgpack',
 ]
 dynamic = ["version"]
 
@@ -75,9 +76,8 @@ package-data = {"rdiff_backup" = ["*.dll"]}
 [tool.setuptools_scm]
 
 [tool.bandit]
-# we ignore the pickle warnings because we need pickle
-# we also ignore asserts because there are too many false positives
-skips = ["B301", "B101"]
+# we ignore asserts because there are too many false positives
+skips = ["B101"]
 
 [tool.mypy]
 files = [

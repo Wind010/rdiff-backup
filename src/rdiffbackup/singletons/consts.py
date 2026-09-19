@@ -46,13 +46,5 @@ CONN_BUFSIZE: typing.Final[int] = 393216
 # stuck in buffers when moving over a remote connection.
 PIPELINE_MAX_LENGTH: int = 500
 
-# This represents the pickle protocol used by rdiff-backup over the connection
-# https://docs.python.org/3/library/pickle.html#pickle-protocols
-# Note that the receiving end will automatically recognize the protocol used so
-# that both ends don't need to use the same one to send, as long as they both
-# understand the maximum protocol version used.
-# Protocol 4 is understood since Python 3.4, protocol 5 since 3.8.
-PICKLE_PROTOCOL: typing.Final[int] = 4
-
 # the quoting character is used to mark quoted characters
 QUOTING_CHAR: typing.Final[bytes] = b";"
