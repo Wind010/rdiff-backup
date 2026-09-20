@@ -89,9 +89,7 @@ class RemoteError(Exception):
         self.remote_type_name = remote_type_name
 
     def __str__(self):
-        return "{rtn}: {msg}".format(
-            rtn=self.remote_type_name, msg=super().__str__()
-        )
+        return "{rtn}: {msg}".format(rtn=self.remote_type_name, msg=super().__str__())
 
 
 def register_exception(cls: _ExcT) -> _ExcT:
@@ -204,9 +202,7 @@ def _encode(obj):
         # an unhashable list); no wire payload does this today.
         return {_encode(k): _encode(v) for k, v in obj.items()}
     elif _request_class is not None and isinstance(obj, _request_class):
-        return msgpack.ExtType(
-            EXT_REQUEST, packb((obj.function_string, obj.num_args))
-        )
+        return msgpack.ExtType(EXT_REQUEST, packb((obj.function_string, obj.num_args)))
     elif isinstance(obj, BaseException):
         key = "{mod}.{name}".format(
             mod=type(obj).__module__, name=type(obj).__qualname__
@@ -280,7 +276,9 @@ def _ext_hook(code, data):
         return cls
     elif code == EXT_EXTRA:
         if _extra_decode_hook is None:
-            raise WireFormatError("Received extra-type data but no decoder is registered")
+            raise WireFormatError(
+                "Received extra-type data but no decoder is registered"
+            )
         return _extra_decode_hook(unpackb(data))
     elif code == EXT_OBJECT:
         key, state = unpackb(data)

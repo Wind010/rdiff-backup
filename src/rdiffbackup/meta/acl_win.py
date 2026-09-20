@@ -19,7 +19,7 @@
 
 import os
 
-from rdiff_backup import C, rorpiter
+from rdiff_backup import C, rorpiter, wireformat
 from rdiffbackup import meta
 from rdiffbackup.singletons import generics, log, specifics
 from rdiffbackup.utils import convert
@@ -59,6 +59,7 @@ except ImportError:
     pywintypes = None
 
 
+@wireformat.register_object
 class ACL:
     flags = (
         GROUP_SECURITY_INFORMATION

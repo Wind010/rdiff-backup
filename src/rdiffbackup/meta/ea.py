@@ -37,7 +37,7 @@ except ImportError:
     except ImportError:
         pass
 
-from rdiff_backup import C, rorpiter
+from rdiff_backup import C, rorpiter, wireformat
 from rdiffbackup import meta
 from rdiffbackup.singletons import generics, log, specifics
 from rdiffbackup.utils import convert
@@ -53,6 +53,7 @@ _XATTR_IGNORE_REASONS = {
 }
 
 
+@wireformat.register_object
 class ExtendedAttributes:
     """Hold a file's extended attribute information"""
 

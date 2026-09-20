@@ -33,7 +33,7 @@ try:
 except ImportError:
     pass
 
-from rdiff_backup import C, rorpiter
+from rdiff_backup import C, rorpiter, wireformat
 from rdiffbackup import meta
 from rdiffbackup.utils import usrgrp
 from rdiffbackup.locations.map import owners as map_owners
@@ -45,6 +45,7 @@ from rdiffbackup.singletons import generics, log, specifics
 dropped_acl_names = {}
 
 
+@wireformat.register_object
 class AccessControlLists:
     """
     Hold a file's access control list information

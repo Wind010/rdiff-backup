@@ -1,0 +1,224 @@
+= rdiff-backup: {page-name}
+:page-name: Connection Protocol Security Redesign
+:sectnums:
+:toc: macro
+
+link:..[Home,role="button round"] link:.[Architecture,role="button round"] // *{page-name}*
+
+'''''
+
+toc::[]
+
+== Problem statement
+
+`rdiff_backup/connection.py` implements the remote-execution protocol used
+between the local and remote (`--server`) rdiff-backup processes.
+`LowLevelPipeConnection._get()` reads a type-tagged, length-prefixed frame
+off the pipe and, for the generic-object frame type (`b"o"`), does:
+
+[source,python]
+----
+if format_string == b"o":
+    result = pickle.loads(data)
+----
+
+`pickle.loads()` is not a data parser, it is a small stack-based bytecode
+interpreter that can instantiate arbitrary importable classes and, via the
+`__reduce__` protocol, invoke arbitrary callables (e.g. `os.system`) as a
+side effect of deserialization, before the calling code ever inspects the
+resulting value. `_getrorpath()` and `_getrpath()` have the same sink for
+the `b"r"`/`b"R"`/`b"S"`/`b"Q"` frame types.
+
+The protocol is designed for two processes that fully trust each other
+(client and server are always spawned from the same local install, talking
+over a transport such as SSH that already authenticates the peer).
+That assumption breaks whenever something *other* than a matched
+rdiff-backup client is able to write to the stdin of an `rdiff-backup
+--server` process: for example, a `sudoers` rule that lets a lower
+privileged local user invoke `--server` directly, or a proxy/wrapper that
+forwards partially-untrusted bytes onto that pipe. In that situation, the
+generic-object frame is a straightforward pre-auth deserialization RCE
+against whatever user is running the server side.
+
+This document proposes replacing generic pickle framing with a
+schema-constrained encoding, and separately, tightening the remote call
+surface exposed through `Connection._eval()`.
+
+== Why this is actually two problems
+
+Serialization is only half of the exposure. `Connection._eval()` resolves
+a dotted `function_string` against `Connection.globals`, which already
+includes `os`, `shutil`, `subprocess`, `SetConnections`, and other
+modules imported specifically "to be able to evaluate across the
+connection" and falls back to raw `__builtins__` if the module lookup
+fails. This means `conn.os.system(...)`-style remote calls are a supported
+part of the design for trusted peers, independent of how return values are
+serialized.
+
+Fixing only the serialization layer (e.g. swapping pickle for msgpack)
+would still leave an untrusted peer able to issue a legitimate
+`ConnectionRequest` for `os.system` and get the same outcome through the
+"safe" protocol. Both halves need to be addressed for a redesign to
+actually close the untrusted-peer case; the serialization fix alone is
+necessary but not sufficient.
+
+== Design goals
+
+* No wire-level construct may cause instantiation of an arbitrary,
+  non-pre-registered Python class or invocation of an arbitrary callable.
+* The set of remotely-callable functions must be an explicit, small,
+  greppable registry -- not "whatever is importable from a handful of
+  trusted-side modules or builtins."
+* Preserve the existing streaming behaviour for large iterators (e.g. a
+  full `RORPath` tree walk) without materializing the whole structure in
+  memory.
+* Client and server are always the same rdiff-backup version in normal
+  operation (mismatches already produce warnings/errors elsewhere), so no
+  cross-version wire-compatibility guarantees are required -- this can be
+  a clean cut rather than a staged migration.
+
+== Proposed encoding: msgpack with explicit ext types
+
+Plain data (`str`, `int`, `bytes`, `bool`, `None`, `list`, `dict`) needs no
+allow-list at all under msgpack: the format has no opcode capable of
+instantiating an application class, so those types decode safely by
+construction, unconditionally.
+
+Custom objects that currently cross the wire via raw pickle
+(`rpath.RPath`, `rpath.RORPath`, `map_filenames.QuotedRPath`,
+`increment.StoredRPath`, and exception objects) are handled through
+msgpack's `ext` type mechanism, which only ever invokes a reconstruction
+function for a type code that was explicitly registered:
+
+[source,python]
+----
+import msgpack
+
+EXT_RORPATH = 1
+EXT_RPATH = 2
+EXT_QRPATH = 3
+EXT_STOREDRPATH = 4
+EXT_EXCEPTION = 5
+
+def _default(obj):
+    if isinstance(obj, rpath.RORPath):
+        return msgpack.ExtType(EXT_RORPATH, msgpack.packb((obj.index, obj.data)))
+    if isinstance(obj, map_filenames.QuotedRPath):
+        return msgpack.ExtType(EXT_QRPATH, msgpack.packb(
+            (obj.conn.conn_number, obj.base, obj.index, obj.data)))
+    if isinstance(obj, increment.StoredRPath):
+        return msgpack.ExtType(EXT_STOREDRPATH, msgpack.packb(
+            (obj.conn.conn_number, obj.base, obj.index, obj.data)))
+    if isinstance(obj, rpath.RPath):
+        return msgpack.ExtType(EXT_RPATH, msgpack.packb(
+            (obj.conn.conn_number, obj.base, obj.index, obj.data)))
+    if isinstance(obj, Exception):
+        return msgpack.ExtType(EXT_EXCEPTION, msgpack.packb(
+            (type(obj).__name__, str(obj))))
+    raise TypeError("Cannot serialize %r over the connection" % (type(obj),))
+
+def _ext_hook(code, data):
+    if code == EXT_RORPATH:
+        index, rp_data = msgpack.unpackb(data, raw=False)
+        return rpath.RORPath(index, rp_data)
+    if code == EXT_RPATH:
+        conn_number, base, index, rp_data = msgpack.unpackb(data, raw=False)
+        return rpath.RPath(specifics.connection_dict[conn_number], base, index, rp_data)
+    if code == EXT_QRPATH:
+        conn_number, base, index, rp_data = msgpack.unpackb(data, raw=False)
+        return map_filenames.QuotedRPath(
+            specifics.connection_dict[conn_number], base, index, rp_data)
+    if code == EXT_STOREDRPATH:
+        conn_number, base, index, rp_data = msgpack.unpackb(data, raw=False)
+        return increment.StoredRPath(
+            specifics.connection_dict[conn_number], base, index, rp_data)
+    if code == EXT_EXCEPTION:
+        cls_name, msg = msgpack.unpackb(data, raw=False)
+        return _RECONSTRUCTABLE_EXCEPTIONS.get(cls_name, ConnectionError)(msg)
+    raise msgpack.exceptions.ExtraData("Unknown ext type %d" % code)
+
+def dump(obj) -> bytes:
+    return msgpack.packb(obj, default=_default, use_bin_type=True)
+
+def load(data: bytes):
+    return msgpack.unpackb(data, ext_hook=_ext_hook, raw=False)
+----
+
+`_getrorpath`/`_getrpath` in `LowLevelPipeConnection` and the `b"o"` branch
+of `_get()` are updated to call `load()` instead of `pickle.loads()`;
+`_putobj`/`_putrpath`/`_putrorpath`/`_putqrpath` call `dump()` instead of
+`pickle.dumps()`. The existing 9-byte type/req-num/length framing is kept
+unchanged -- only the payload codec for the `b"o"` (and related structured)
+frame types changes.
+
+`ConnectionRequest` (the call envelope) becomes an explicit dict shape
+rather than a pickled instance:
+
+[source,python]
+----
+{"fn": "rpath.get_stat", "args": [...]}
+----
+
+So that a call frame is itself just plain data, not a class instance
+requiring any `ext` registration.
+
+=== Streaming iterators
+
+The existing `VirtualFile`/`iterfile.MiscIterToFile` mechanism already
+avoids materializing whole `RORPath` trees before sending. `msgpack.Unpacker`
+supports the same pattern: feed bytes into the unpacker incrementally as
+they arrive on the pipe and call `.unpack()` (or iterate the `Unpacker`
+object) to decode one item at a time. No behavioural change versus today's
+streaming, only the underlying per-item codec changes.
+
+== Locking down the call surface
+
+`Connection._eval()` is replaced with an explicit registry so that the
+set of remotely-invocable functions is enumerable independent of what
+happens to be importable on the trusted side:
+
+[source,python]
+----
+_REMOTE_CALLABLE = {}
+
+def remote_callable(name):
+    def deco(fn):
+        _REMOTE_CALLABLE[name] = fn
+        return fn
+    return deco
+
+@remote_callable("rpath.get_stat")
+def _rpath_get_stat(path):
+    ...
+
+def resolve_remote_call(name):
+    try:
+        return _REMOTE_CALLABLE[name]
+    except KeyError:
+        raise NameError("%r is not a registered remote-callable function" % name)
+----
+
+Every function currently reached indirectly via `conn.<module>.<func>(...)`
+needs an explicit `@remote_callable` entry point instead. This is the
+larger part of the migration effort: it requires enumerating every
+remote call site across the codebase (`conn.os.*`, `conn.rpath.*`,
+`conn.shutil.*`, etc.) and wrapping each legitimately-needed operation as
+a named, registered function, rather than exposing the modules completely.
+
+== What this does and does not fix
+
+* It removes arbitrary code execution via a crafted `b"o"` (or `b"r"`/`b"R"`/`b"S"`/`b"Q"`) frame, for any peer that is not otherwise permitted to invoke an allow-listed remote function.
+* It does not, by itself, make it safe to expose `--server` to an untrusted local caller. A registered remote function that itself does something dangerous with attacker-controlled arguments (path traversal via `index`/`base`, for instance) is still an available attack surface, just a much smaller, auditable one, instead of "anything importable."
+* It does not prevent abuse of `--remote-schema` to execute local or remote wrappers for `sudo`, changing default ports or chaining commands.
+* It does not replace the need to fix privilege-boundary misconfigurations (e.g. a `sudoers` rule that hands a lower-privileged local user a raw stdin pipe into a root-owned `--server` process). That is a deployment/configuration issue independent of the wire protocol and must be fixed at the sudoers/deployment layer regardless of how this protocol evolves.
+
+
+== Migration notes
+
+* Client and server are always matched versions in normal operation, so this can ship as a breaking wire-protocol change in a major version bump, without a compatibility shim.
+* `pickle` remains a hard dependency of the `msgpack` fallback path only if a staged rollout is desired (e.g. negotiate protocol version at connection start); given the goals above, a clean cut is recommended over maintaining both encoders long-term.
+* Suggested incremental delivery:
+. Introduce `dump()`/`load()` alongside the existing pickle calls, gated by a module-level constant, to validate parity in the test suite.
+. Migrate `_putobj`/`_get`/`_getrorpath`/`_getrpath` to the new codec.
+. Introduce `_REMOTE_CALLABLE` and migrate call sites off `Connection._eval()`'s builtin/module fallback, function by function, with a deprecation warning on any call still hitting the fallback path.
+. Remove the `_eval()` fallback and the pickle codec path once migration is complete.

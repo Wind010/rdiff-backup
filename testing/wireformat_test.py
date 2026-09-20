@@ -7,7 +7,10 @@ import unittest
 
 import msgpack
 
-from rdiff_backup import connection, wireformat  # noqa: F401 (registers ConnectionRequest)
+from rdiff_backup import (
+    connection,
+    wireformat,
+)  # noqa: F401 (registers ConnectionRequest)
 
 
 class RoundTripTest(unittest.TestCase):
@@ -18,7 +21,9 @@ class RoundTripTest(unittest.TestCase):
             self.assertEqual(wireformat.unpackb(wireformat.packb(obj)), obj)
 
     def testList(self):
-        self.assertEqual(wireformat.unpackb(wireformat.packb([1, "a", None])), [1, "a", None])
+        self.assertEqual(
+            wireformat.unpackb(wireformat.packb([1, "a", None])), [1, "a", None]
+        )
 
     def testDict(self):
         obj = {"a": 1, "b": [1, 2, {"c": 3}]}
@@ -225,7 +230,10 @@ class ExtraHooksTest(unittest.TestCase):
             self.tag = tag
 
     def setUp(self):
-        self._saved_hooks = (wireformat._extra_encode_hook, wireformat._extra_decode_hook)
+        self._saved_hooks = (
+            wireformat._extra_encode_hook,
+            wireformat._extra_decode_hook,
+        )
 
         def encode(obj):
             if isinstance(obj, self._External):
